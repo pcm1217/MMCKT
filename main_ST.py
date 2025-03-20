@@ -12,26 +12,6 @@ from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 import copy
 import argparse
 
-class DiffLoss(nn.Module):         
-
-    def __init__(self):
-        super(DiffLoss, self).__init__()
-
-    def forward(self, input1, input2):
-
-        batch_size = input1.size(0)
-        input1 = input1.view(batch_size, -1)
-        input2 = input2.view(batch_size, -1)
-
-        input1_l2_norm = torch.norm(input1, p=2, dim=1, keepdim=True).detach()
-        input1_l2 = input1.div(input1_l2_norm.expand_as(input1) + 1e-6)
-
-        input2_l2_norm = torch.norm(input2, p=2, dim=1, keepdim=True).detach()
-        input2_l2 = input2.div(input2_l2_norm.expand_as(input2) + 1e-6)
-
-        diff_loss = torch.mean((input1_l2.t().mm(input2_l2)).pow(2))
-
-        return diff_loss
 
 class calculate_cl_loss(nn.Module):
     def __init__(self, temperature):
@@ -71,17 +51,10 @@ def train_model_all(model,seq_dataloader_train,seq_dataloader_test,optimizer_lis
                         meta_emb = meta_emb.to(args.device)
                         target=target.to(args.device)
                     logits, contrastive_loss, img_emb1, img_emb2, text_emb1, text_emb2, meta_emb1, meta_emb2, prompt_a, prompt_b  = model(idx,seq, time_seq, img_emb, text_emb, meta_emb)
-                    cl_loss1 = cl_loss(img_emb1, img_emb2)
-                    cl_loss2 = cl_loss(text_emb1, text_emb2)
-                    cl_loss3 = cl_loss(meta_emb1, meta_emb2)
-                    
                     optimizer_list[0].zero_grad()
                     
                     loss1 = bce_criterion(logits, (target-1))
-                    loss = loss1 + (contrastive_loss+cl_loss1+cl_loss2+cl_loss3) * args.alpha
-                    #print('contrastive_loss:{:.5f}'.format(contrastive_loss))
-                    #print('loss1:{:.5f}'.format(loss1))
-                    # for param in model.item_emb.parameters(): loss += args.l2_emb * torch.norm(param)
+                    loss = loss1 + contrastive_loss * args.alpha
                     loss.backward()
                     
                     optimizer.step() 
@@ -124,19 +97,14 @@ def train_model_all(model,seq_dataloader_train,seq_dataloader_test,optimizer_lis
                         r20_b += recall[3]
                         m20_b += mrr[3]
                         ndcg20_b += ndcg[3]
-                    # if (r10_b+r20_b)/2>best_cirtion :
-                    #     best_cirtion=(r10_b+r20_b)/2
-                    #     torch.save(model.state_dict(),'model/{},{},{},qianyi={},model_best.pth'.format(args.alpha,args.Beta,args.Gamma,str(args.qianyi)))
-                    print('contrastive_loss:{:.5f}'.format(contrastive_loss))
-                    print('loss1:{:.5f}'.format(loss1))
-                    print('loss:{:.5f}'.format(loss))
+
                     print('Recall3_b: {:.5f}; Mrr3: {:.5f}; Ndcg3:{:.5f}'.format(r3_b/len_,m3_b/len_,ndcg3_b/len_))
                     print('Recall5_b: {:.5f}; Mrr5: {:.5f}; Ndcg5:{:.5f}'.format(r5_b/len_,m5_b/len_,ndcg5_b/len_))
                     print('Recall10_b: {:.5f}; Mrr10: {:.5f}; Ndcg10:{:.5f}'.format(r10_b/len_,m10_b/len_,ndcg10_b/len_))
                     print('Recall20_b: {:.5f}; Mrr20: {:.5f}; Ndcg20:{:.5f}'.format(r20_b/len_,m20_b/len_,ndcg20_b/len_))
                 # if (epoch+1 ) == 20:
                 #     torch.save(model.state_dict(),'model/SAS.pth')
-    torch.save(model.state_dict(),'/data/s2019020849/Code/POI_Recommendation/multi-POI/model/mcrpl_one.pth')               
+    torch.save(model.state_dict(),'/data/Code/POI_Recommendation/multi-POI/model/mmckt_one.pth')               
 
 
 def train_model_one(model,seq_dataloader_train_A,seq_dataloader_test_A,optimizer_list,bce_criterion,num_epochs,args,len_):
@@ -162,18 +130,11 @@ def train_model_one(model,seq_dataloader_train_A,seq_dataloader_test_A,optimizer
                         meta_emb = meta_emb.to(args.device)
                         target_a=target.to(args.device)
                     logits, contrastive_loss, img_emb1, img_emb2, text_emb1, text_emb2, meta_emb1, meta_emb2, prompt_a, prompt_b  = model(idx,seq, time_seq, img_emb, text_emb, meta_emb)
-                    cl_loss1 = cl_loss(img_emb1, img_emb2)
-                    cl_loss2 = cl_loss(text_emb1, text_emb2)
-                    cl_loss3 = cl_loss(meta_emb1, meta_emb2)
                     
-                    loss_diff = cal_diff(prompt_a,prompt_b)
                     optimizer_list[0].zero_grad()
                     # if phase == 'train':
                     loss1 = bce_criterion(logits, (target_a-1))
-                    loss = loss1 + (args.Lambda) * loss_diff + (contrastive_loss+cl_loss1+cl_loss2+cl_loss3) * args.alpha
-                    #print('contrastive_loss:{:.5f}'.format(contrastive_loss))
-                    #print('loss1:{:.5f}'.format(loss1))
-                    #loss = loss + contrastive_loss * args.alpha
+                    loss = loss1 + contrastive_loss * args.alpha
                     # for param in model.item_emb.parameters(): loss += args.l2_emb * torch.norm(param)
                     loss.backward()
                     optimizer.step() 
@@ -221,15 +182,13 @@ def train_model_one(model,seq_dataloader_train_A,seq_dataloader_test_A,optimizer
                     # if (r10_b+r20_b)/2>best_cirtion :
                     #     best_cirtion=(r10_b+r20_b)/2
                     #     torch.save(model.state_dict(),'model/{},{},{},qianyi={},model_best.pth'.format(args.alpha,args.Beta,args.Gamma,str(args.qianyi)))
-                    print('contrastive_loss:{:.5f}'.format(contrastive_loss))
-                    print('loss:{:.5f}'.format(loss))
                     print('Recall3_b: {:.5f}; Mrr3: {:.5f}; Ndcg3:{:.5f}'.format(r3_b/len_,m3_b/len_,ndcg3_b/len_))
                     print('Recall5_b: {:.5f}; Mrr5: {:.5f}; Ndcg5:{:.5f}'.format(r5_b/len_,m5_b/len_,ndcg5_b/len_))
                     print('Recall10_b: {:.5f}; Mrr10: {:.5f}; Ndcg10:{:.5f}'.format(r10_b/len_,m10_b/len_,ndcg10_b/len_))
                     print('Recall20_b: {:.5f}; Mrr20: {:.5f}; Ndcg20:{:.5f}'.format(r20_b/len_,m20_b/len_,ndcg20_b/len_))
                 # if (epoch+1 ) == 20:
                 #     torch.save(model.state_dict(),'model/SAS.pth')
-    torch.save(model.state_dict(),'/data/s2019020849/Code/POI_Recommendation/multi-POI/model/mcrpl_two.pth')               
+    torch.save(model.state_dict(),'/data/Code/POI_Recommendation/multi-POI/model/mmckt_two.pth')               
 
 
     # return best_model_wts
@@ -279,9 +238,9 @@ if __name__=='__main__':
     parser.add_argument('--state_dict_path', default=None, type=str)
     args = parser.parse_args()
   
-    dataset=TVdatasets_all('/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_poi_encoding.txt','/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_poi_encoding.txt','/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_train1.csv',
-                           '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_train1.csv', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_image.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_review.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_cate.json',
-                           '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_image.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_review.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_cate.json', args, domain='all', offsets=args.A_size)    
+    dataset=TVdatasets_all('/data/Mydata/GB-TKY_ST/all_data/GB_poi_encoding.txt','/data/Mydata/GB-TKY_ST/all_data/TKY_poi_encoding.txt','/data/Mydata/GB-TKY_ST/all_data/GB_train1.csv',
+                           '/data/Mydata/GB-TKY_ST/all_data/TKY_train1.csv', '/data/Mydata/GB-TKY_ST/all_data/GB_image.json', '/data/Mydata/GB-TKY_ST/all_data/GB_review.json', '/data/Mydata/GB-TKY_ST/all_data/GB_cate.json',
+                           '/data/Mydata/GB-TKY_ST/all_data/TKY_image.json', '/data/Mydata/GB-TKY_ST/all_data/TKY_review.json', '/data/Mydata/GB-TKY_ST/all_data/TKY_cate.json', args, domain='all', offsets=args.A_size)    
 
     #dataset=TVdatasets_all('/data/s2019020849/Mydata/GB_processed.csv','/data/s2019020849/Mydata/TKY_processed.csv',args,domain='all',offsets=args.A_size)
     # usernum=dataset.usernum
@@ -290,25 +249,18 @@ if __name__=='__main__':
     cal_diff=DiffLoss().to(args.device)
     cl_loss = calculate_cl_loss(temperature=args.temperature).to(args.device)
 
-    dataset_test=TVdatasets_all('/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_poi_encoding.txt','/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_poi_encoding.txt','/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_test1.csv',
-                           '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_test1.csv', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_image.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_review.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_cate.json',
-                           '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_image.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_review.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_cate.json', args,domain='A',offsets=args.A_size)    
+    dataset_test=TVdatasets_all('/data/Mydata/GB-TKY_ST/all_data/GB_poi_encoding.txt','/data/Mydata/GB-TKY_ST/all_data/TKY_poi_encoding.txt','/data/Mydata/GB-TKY_ST/all_data/GB_test1.csv',
+                           '/data/Mydata/GB-TKY_ST/all_data/TKY_test1.csv', '/data/Mydata/GB-TKY_ST/all_data/GB_image.json', '/data/Mydata/GB-TKY_ST/all_data/GB_review.json', '/data/Mydata/GB-TKY_ST/all_data/GB_cate.json',
+                           '/data/Mydata/GB-TKY_ST/all_data/TKY_image.json', '/data/Mydata/GB-TKY_ST/all_data/TKY_review.json', '/data/Mydata/GB-TKY_ST/all_data/TKY_cate.json', args,domain='A',offsets=args.A_size)    
 
     bce_criterion = torch.nn.CrossEntropyLoss().to(args.device)
 
     data_loader_train_A = DataLoader(dataset,batch_size=128,shuffle=True)
     data_loader_test_A = DataLoader(dataset_test,batch_size=128,shuffle=True)
 
- 
-    # from SASRec import SASRec
-    # model = SASRec(args,args.A_size).to(args.device)
+    from modal_Att import mmckt
 
-   
-    from modal_Att import mcrpl
-
-    model = mcrpl(args, args.all_size).to(args.device)
-
-
+    model = mmckt(args, args.all_size).to(args.device)
 
     for name, param in model.named_parameters():
 
@@ -344,15 +296,15 @@ if __name__=='__main__':
 
 
 
-    path='/data/s2019020849/Code/POI_Recommendation/multi-POI/model/mcrpl_one.pth'
+    path='/data/Code/POI_Recommendation/multi-POI/model/mmckt_one.pth'
     model.load_state_dict(torch.load(path,map_location=torch.device(args.device)),strict=False)
 
 
     model.Freeze_a()
 
-    dataset_a_train=TVdatasets_all('/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_poi_encoding.txt','/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_poi_encoding.txt','/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_train1.csv',
-                           '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_train1.csv', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_image.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_review.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/GB_cate.json',
-                           '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_image.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_review.json', '/data/s2019020849/Mydata/GB-TKY_ST/all_data/TKY_cate.json', args,domain='A',offsets=args.A_size)
+    dataset_a_train=TVdatasets_all('/data/Mydata/GB-TKY_ST/all_data/GB_poi_encoding.txt','/data/Mydata/GB-TKY_ST/all_data/TKY_poi_encoding.txt','/data/Mydata/GB-TKY_ST/all_data/GB_train1.csv',
+                           '/data/Mydata/GB-TKY_ST/all_data/TKY_train1.csv', '/data/Mydata/GB-TKY_ST/all_data/GB_image.json', '/data/Mydata/GB-TKY_ST/all_data/GB_review.json', '/data/Mydata/GB-TKY_ST/all_data/GB_cate.json',
+                           '/data/Mydata/GB-TKY_ST/all_data/TKY_image.json', '/data/Mydata/GB-TKY_ST/all_data/TKY_review.json', '/data/Mydata/GB-TKY_ST/all_data/TKY_cate.json', args,domain='A',offsets=args.A_size)
 
     bce_criterion = torch.nn.CrossEntropyLoss().to(args.device)
 
