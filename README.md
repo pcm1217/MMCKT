@@ -1,5 +1,5 @@
 # MMCKT
-Multi-Modal Cross-domain Knowledge Transfer for Next POI Recommendation  
+Multi-Modal Cross-region Knowledge Transfer for Next POI Recommendation  
 Our datasets are collected from the following links. https://sites.google.com/site/yangdingqi/home/foursquare-dataset.   
 1.model_ST.py is the Python code that stores the model.  
 2.main_ST.py A is the code for training the model, saving the model weight file and obtaining the result.  
